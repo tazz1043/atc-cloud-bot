@@ -2,6 +2,7 @@ import os
 import time
 import datetime
 import traceback
+import threading # <--- NEW: Allows the bot to run in the background
 from flask import Flask, request, render_template_string
 from werkzeug.utils import secure_filename
 from openpyxl import load_workbook
@@ -109,6 +110,7 @@ def handle_react_select(driver, label_name, placeholder_text, value):
         time.sleep(0.3)
     except: pass
 
+# --- THE BACKGROUND BOT ENGINE ---
 def run_automation(filepath):
     try:
         wb = load_workbook(filename=filepath, data_only=True)
@@ -164,43 +166,33 @@ def run_automation(filepath):
                 row_dict[header] = val
             if any(row_dict.values()): df.append(row_dict)
 
-        # ---------------------------------------------------------
-        # CLOUD HEADLESS CHROME CONFIGURATION
-        # ---------------------------------------------------------
+        print(f"Loaded {len(df)} rows. Launching Chrome...")
         chrome_options = webdriver.ChromeOptions()
-        chrome_options.binary_location = "/usr/bin/google-chrome" # CRITICAL FOR RENDER
+        chrome_options.binary_location = "/usr/bin/google-chrome"
         chrome_options.add_argument('--headless=new')
         chrome_options.add_argument('--no-sandbox')
         chrome_options.add_argument('--disable-dev-shm-usage')
         chrome_options.add_argument('--disable-gpu')
         chrome_options.add_argument('--window-size=1920,1080')
        
-        # Native Selenium 4 will automatically find the correct Chrome driver
         driver = webdriver.Chrome(options=chrome_options)
        
-        # ---------------------------------------------------------
-        # CLOUD AUTO-LOGIN
-        # ---------------------------------------------------------
         driver.get("https://iamatc.aai.aero/login")
         time.sleep(3)
        
         try:
-            # 1. Type Username (Using the exact XPath from your screenshot)
+            # ---> RE-ENTER YOUR XPATHS AND PASSWORD HERE BEFORE SAVING! <---
             driver.find_element(By.XPATH, '//*[@id="user_id"]').send_keys("tapask")
             time.sleep(0.5)
-           
-            # 2. Type Password
-            # Note: I am assuming the ID is "password". If it fails, update this XPath!
             driver.find_element(By.XPATH, '//*[@id="password"]').send_keys("Kunmunprem21@")
             time.sleep(0.5)
-           
-            # 3. Click Login
-            # Note: I am assuming the button text is "Login". If it fails, update this XPath!
             driver.find_element(By.XPATH, '//button[contains(translate(., "ABCDEFGHIJKLMNOPQRSTUVWXYZ", "abcdefghijklmnopqrstuvwxyz"), "login")]').click()
             time.sleep(5)
            
         except Exception as e:
-            return f"Auto-Login Failed. Check your Password/Button XPaths! Error: {str(e)}"
+            print(f"Auto-Login Failed: {str(e)}")
+            driver.quit()
+            return
            
         driver.get(DUTY_ENTRY_URL)
         time.sleep(3)
@@ -277,10 +269,14 @@ def run_automation(filepath):
                 current_locked_date = None
                
         driver.quit()
-        return "Automation Cycle Finished Successfully!"
+        print("Automation Cycle Finished Successfully!")
        
     except Exception as e:
-        return f"Automation Failed: {str(e)}\n{traceback.format_exc()}"
+        print(f"Automation Failed: {str(e)}\n{traceback.format_exc()}")
+    finally:
+        # Securely deletes your file from the server when finished
+        if os.path.exists(filepath):
+            os.remove(filepath)
 
 HTML_TEMPLATE = """
 <!DOCTYPE html>
@@ -324,9 +320,20 @@ def upload_file():
         filename = secure_filename(file.filename)
         filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
         file.save(filepath)
-        result = run_automation(filepath)
-        os.remove(filepath)
-        return f"<h3>Status Report:</h3><pre>{result}</pre><br><a href='/'>Go Back</a>"
+       
+        # --- NEW: Spun off into a background thread ---
+        thread = threading.Thread(target=run_automation, args=(filepath,))
+        thread.start()
+       
+        # Instantly replies to your browser so Render doesn't throw a 502 Timeout Error!
+        return """
+        <div style='font-family: Arial, sans-serif; text-align: center; margin-top: 50px;'>
+            <h2 style='color: green;'>File Received & Bot Launched!</h2>
+            <p>The bot is currently running invisibly in the cloud.</p>
+            <p>Please wait a few minutes, then check your AAI portal to verify the entries.</p>
+            <br><a href='/'>Upload Another Logbook</a>
+        </div>
+        """
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
