@@ -133,7 +133,7 @@ def handle_react_select(driver, label_name, placeholder_text, value):
 # ==========================================
 def run_automation(filepath):
     bot_status["is_running"] = True
-    bot_status["logs"] = [] # Clear old logs
+    bot_status["logs"] = []
     add_log("⚙️ File received. Reading Excel data...")
    
     try:
@@ -200,14 +200,26 @@ def run_automation(filepath):
         chrome_options.add_argument('--disable-gpu')
         chrome_options.add_argument('--window-size=1920,1080')
        
+        # --- MEMORY SAVERS ---
+        chrome_options.add_argument('--disable-software-rasterizer')
+        chrome_options.add_argument('--blink-settings=imagesEnabled=false')
+       
         driver = webdriver.Chrome(options=chrome_options)
        
+        # --- ANTI-HANG TIMEOUT ---
+        driver.set_page_load_timeout(30)
+       
         add_log("🔑 Connecting to AAI Portal to Auto-Login...")
-        driver.get("https://iamatc.aai.aero/login")
-        time.sleep(3)
        
         try:
-            # ---> PASTE YOUR 3 XPATHS HERE! <---
+            driver.get("https://iamatc.aai.aero/login")
+            time.sleep(3)
+        except Exception as e:
+            add_log("❌ FIREWALL/TIMEOUT: The AAI portal refused to load on the cloud server!")
+            driver.quit()
+            return
+           
+        try:
             driver.find_element(By.XPATH, '//*[@id="user_id"]').send_keys("tapask")
             time.sleep(0.5)
             driver.find_element(By.XPATH, '//*[@id="password"]').send_keys("Kunmunprem21@")
