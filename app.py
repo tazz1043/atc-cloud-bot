@@ -186,9 +186,9 @@ def run_automation(filepath):
        
         try:
             # ---> YOU MUST UPDATE THESE XPATHS TO MATCH THE PORTAL <---
-            # driver.find_element(By.XPATH, "//input[@name='username']").send_keys("tapask")
-            # driver.find_element(By.XPATH, "//input[@name='password']").send_keys("Kunmunprem21@")
-            # driver.find_element(By.XPATH, "//button[contains(text(), 'Login')]").click()
+             driver.find_element(By.XPATH, "//*[@id="user_id"]").send_keys("tapask")
+             driver.find_element(By.XPATH, "//*[@id="password"]").send_keys("Kunmunprem21@")
+             driver.find_element(By.XPATH, "//button[contains(text(), 'Login')]").click()
             time.sleep(5)
         except Exception as e:
             return f"Auto-Login Failed. Error: {str(e)}"
