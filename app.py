@@ -185,13 +185,22 @@ def run_automation(filepath):
         time.sleep(3)
        
         try:
-            # ---> YOU MUST UPDATE THESE XPATHS TO MATCH THE PORTAL <---
-             driver.find_element(By.XPATH, '//*[@id="user_id"]').send_keys("tapask")
-             driver.find_element(By.XPATH, '//*[@id="password"]').send_keys("Kunmunprem21@")
-             driver.find_element(By.XPATH, "//button[contains(text(), 'Login')]").click()
+            # 1. Type Username (Using the exact XPath from your screenshot)
+            driver.find_element(By.XPATH, '//*[@id="user_id"]').send_keys("tapask")
+            time.sleep(0.5)
+           
+            # 2. Type Password
+            # Note: I am assuming the ID is "password". If it fails, update this XPath!
+            driver.find_element(By.XPATH, '//*[@id="password"]').send_keys("Kunmunprem21@")
+            time.sleep(0.5)
+           
+            # 3. Click Login
+            # Note: I am assuming the button text is "Login". If it fails, update this XPath!
+            driver.find_element(By.XPATH, '//button[contains(translate(., "ABCDEFGHIJKLMNOPQRSTUVWXYZ", "abcdefghijklmnopqrstuvwxyz"), "login")]').click()
             time.sleep(5)
+           
         except Exception as e:
-            return f"Auto-Login Failed. Error: {str(e)}"
+            return f"Auto-Login Failed. Check your Password/Button XPaths! Error: {str(e)}"
            
         driver.get(DUTY_ENTRY_URL)
         time.sleep(3)
