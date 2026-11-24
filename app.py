@@ -2,8 +2,8 @@ import os
 import time
 import datetime
 import traceback
-import threading # <--- NEW: Allows the bot to run in the background
-from flask import Flask, request, render_template_string
+import threading
+from flask import Flask, request, render_template_string, jsonify
 from werkzeug.utils import secure_filename
 from openpyxl import load_workbook
 
@@ -22,6 +22,24 @@ app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 
 DUTY_ENTRY_URL = "https://iamatc.aai.aero/atc/duty-entry"
 
+# ==========================================
+# GLOBAL BOT MEMORY (For the Live Tracker)
+# ==========================================
+bot_status = {
+    "is_running": False,
+    "logs": []
+}
+
+def add_log(message):
+    """Saves the bot's status so the website can display it"""
+    print(message, flush=True)
+    bot_status["logs"].append(message)
+    if len(bot_status["logs"]) > 50:
+        bot_status["logs"].pop(0)
+
+# ==========================================
+# CORE BOT FUNCTIONS
+# ==========================================
 def dismiss_popups(driver):
     try:
         driver.switch_to.alert.accept()
@@ -110,8 +128,14 @@ def handle_react_select(driver, label_name, placeholder_text, value):
         time.sleep(0.3)
     except: pass
 
-# --- THE BACKGROUND BOT ENGINE ---
+# ==========================================
+# THE BACKGROUND BOT ENGINE
+# ==========================================
 def run_automation(filepath):
+    bot_status["is_running"] = True
+    bot_status["logs"] = [] # Clear old logs
+    add_log("⚙️ File received. Reading Excel data...")
+   
     try:
         wb = load_workbook(filename=filepath, data_only=True)
         ws = wb.active
@@ -166,7 +190,8 @@ def run_automation(filepath):
                 row_dict[header] = val
             if any(row_dict.values()): df.append(row_dict)
 
-        print(f"Loaded {len(df)} rows. Launching Chrome...")
+        add_log(f"📦 Loaded {len(df)} rows. Booting invisible Chrome browser...")
+       
         chrome_options = webdriver.ChromeOptions()
         chrome_options.binary_location = "/usr/bin/google-chrome"
         chrome_options.add_argument('--headless=new')
@@ -177,20 +202,21 @@ def run_automation(filepath):
        
         driver = webdriver.Chrome(options=chrome_options)
        
+        add_log("🔑 Connecting to AAI Portal to Auto-Login...")
         driver.get("https://iamatc.aai.aero/login")
         time.sleep(3)
        
         try:
-            # ---> RE-ENTER YOUR XPATHS AND PASSWORD HERE BEFORE SAVING! <---
+            # ---> PASTE YOUR 3 XPATHS HERE! <---
             driver.find_element(By.XPATH, '//*[@id="user_id"]').send_keys("tapask")
             time.sleep(0.5)
             driver.find_element(By.XPATH, '//*[@id="password"]').send_keys("Kunmunprem21@")
             time.sleep(0.5)
             driver.find_element(By.XPATH, '//button[contains(translate(., "ABCDEFGHIJKLMNOPQRSTUVWXYZ", "abcdefghijklmnopqrstuvwxyz"), "login")]').click()
             time.sleep(5)
-           
+            add_log("✅ Login Successful! Moving to Dashboard...")
         except Exception as e:
-            print(f"Auto-Login Failed: {str(e)}")
+            add_log(f"❌ LOGIN FAILED: {str(e)}")
             driver.quit()
             return
            
@@ -199,9 +225,12 @@ def run_automation(filepath):
        
         current_locked_date = None
         for index, row in enumerate(df):
+            target_date = str(row.get('Date', '')).strip()
+            unit_val = str(row.get('Unit', ''))
+            add_log(f"▶️ [Row {index+2}] Processing: {unit_val} on {target_date}")
+           
             try:
                 dismiss_popups(driver)
-                target_date = str(row.get('Date', '')).strip()
                
                 if target_date != current_locked_date:
                     try:
@@ -245,7 +274,6 @@ def run_automation(filepath):
                 wait_and_click(driver, duty_radio_xpath)
                 time.sleep(1.0)
 
-                unit_val = str(row.get('Unit', ''))
                 handle_react_select(driver, "OPERATIONAL UNIT", "- Select Unit -", unit_val)
                
                 start_time = row.get('TOW', row.get('From', ''))
@@ -262,23 +290,30 @@ def run_automation(filepath):
                 wait_and_click(driver, "//button[contains(., '+ Add Position Entry') or contains(., 'Add Position')]")
                 time.sleep(2.5)
                 dismiss_popups(driver)
+               
+                add_log(f"   ✅ SUCCESS: Row {index+2} saved to portal!")
    
             except Exception as e:
+                add_log(f"   ❌ ERROR ON ROW {index+2}: {str(e)}")
                 driver.refresh()
                 time.sleep(3)
                 current_locked_date = None
                
         driver.quit()
-        print("Automation Cycle Finished Successfully!")
+        add_log("🎉 AUTOMATION CYCLE FINISHED COMPLETELY!")
+        add_log("You may now close this window.")
        
     except Exception as e:
-        print(f"Automation Failed: {str(e)}\n{traceback.format_exc()}")
+        add_log(f"❌ FATAL BOT ERROR: {str(e)}")
     finally:
-        # Securely deletes your file from the server when finished
+        bot_status["is_running"] = False
         if os.path.exists(filepath):
             os.remove(filepath)
 
-HTML_TEMPLATE = """
+# ==========================================
+# FLASK WEB INTERFACE
+# ==========================================
+HTML_INDEX = """
 <!DOCTYPE html>
 <html>
 <head>
@@ -305,9 +340,50 @@ HTML_TEMPLATE = """
 </html>
 """
 
+HTML_TRACKER = """
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Live Bot Tracker</title>
+    <style>
+        body { font-family: Arial, sans-serif; background-color: #1e1e2e; color: white; padding: 40px; text-align: center; }
+        .terminal { background: #000; color: #00ff00; padding: 20px; border-radius: 10px; width: 80%; max-width: 800px; height: 400px; margin: 20px auto; overflow-y: scroll; text-align: left; font-family: 'Courier New', Courier, monospace; line-height: 1.6; border: 1px solid #4CAF50; }
+        a { color: #4CAF50; text-decoration: none; font-size: 18px; border: 1px solid #4CAF50; padding: 10px; border-radius: 5px; }
+        a:hover { background: #4CAF50; color: white; }
+    </style>
+</head>
+<body>
+    <h2>🚀 Bot is Running in the Cloud...</h2>
+    <p>Do not refresh this page. The log below will update automatically.</p>
+   
+    <div class="terminal" id="logbox">Waiting for bot to boot...</div>
+    <br><br>
+    <a href="/">Upload Another File</a>
+
+    <script>
+        setInterval(() => {
+            fetch('/api/status')
+            .then(response => response.json())
+            .then(data => {
+                let box = document.getElementById('logbox');
+                box.innerHTML = data.logs.join('<br>');
+                // Auto-scroll to the bottom as new text appears
+                box.scrollTop = box.scrollHeight;
+            });
+        }, 2000); // Asks the server for new text every 2 seconds
+    </script>
+</body>
+</html>
+"""
+
 @app.route('/')
 def index():
-    return render_template_string(HTML_TEMPLATE)
+    return render_template_string(HTML_INDEX)
+
+@app.route('/api/status')
+def get_status():
+    """This hidden route feeds the live text to your web browser"""
+    return jsonify(bot_status)
 
 @app.route('/upload', methods=['POST'])
 def upload_file():
@@ -321,19 +397,12 @@ def upload_file():
         filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
         file.save(filepath)
        
-        # --- NEW: Spun off into a background thread ---
+        # Start the bot in the background
         thread = threading.Thread(target=run_automation, args=(filepath,))
         thread.start()
        
-        # Instantly replies to your browser so Render doesn't throw a 502 Timeout Error!
-        return """
-        <div style='font-family: Arial, sans-serif; text-align: center; margin-top: 50px;'>
-            <h2 style='color: green;'>File Received & Bot Launched!</h2>
-            <p>The bot is currently running invisibly in the cloud.</p>
-            <p>Please wait a few minutes, then check your AAI portal to verify the entries.</p>
-            <br><a href='/'>Upload Another Logbook</a>
-        </div>
-        """
+        # Instantly load the Live Tracker page!
+        return render_template_string(HTML_TRACKER)
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
