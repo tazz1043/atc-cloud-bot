@@ -13,7 +13,6 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.common.action_chains import ActionChains
-from webdriver_manager.chrome import ChromeDriverManager
 
 app = Flask(__name__)
 UPLOAD_FOLDER = 'uploads'
@@ -176,8 +175,8 @@ def run_automation(filepath):
         chrome_options.add_argument('--disable-gpu')
         chrome_options.add_argument('--window-size=1920,1080')
        
-        service = Service(ChromeDriverManager().install())
-        driver = webdriver.Chrome(service=service, options=chrome_options)
+        # Native Selenium 4 will automatically find the correct Chrome driver
+        driver = webdriver.Chrome(options=chrome_options)
        
         # ---------------------------------------------------------
         # CLOUD AUTO-LOGIN
